@@ -34,6 +34,7 @@ use airhand_link::net::{MemoryTrust, Trust, TrustStore, format_fingerprint, pars
 use airhand_link::secure::Identity;
 use airhand_proto::signal::Reclaim;
 use anyhow::Result;
+use serde::Serialize;
 use toml_edit::{DocumentMut, Item};
 use tracing::{error, info, warn};
 
@@ -117,6 +118,21 @@ pub struct Settings {
     pub prevent_sleep: bool,
     /// 服务器分配的控制码和加密过的密钥（`[code]`），用 [`Settings::code`] 解开
     saved_code: Option<(i64, String)>,
+}
+
+/// 界面上编辑的中转服务器设置（控制台的"服务器状态 → 编辑"）。
+///
+/// 读的是配置文件当前的内容（不是进程启动时读到的 [`settings`]），这样刚保存完就能在界面上看到新值；
+/// 连接用的 [`link`] 仍然是启动时那一份，所以保存之后要重启 Airhand 才会生效。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfig {
+    /// 中转服务器地址 `host:port`（UDP）
+    pub server: String,
+    /// 证书指纹；`""` 表示第一次连接时记下（`[server_trust]`）
+    pub server_fp: String,
+    /// 是否配置了固定的证书指纹
+    pub pinned: bool,
 }
 
 impl Default for Settings {
@@ -287,6 +303,19 @@ pub fn link() -> Arc<LinkConfig> {
 /// 是否配置了固定的服务器证书指纹（否则第一次连接时记下，控制台据此说明）
 pub fn pinned() -> bool {
     link().pinned()
+}
+
+/// 界面上显示的服务器设置：每次从配置文件读，读不到时用进程启动时读到的值
+pub fn server_config() -> ServerConfig {
+    let s = read_text()
+        .and_then(|t| parse(&t).ok())
+        .unwrap_or_else(|| settings().clone());
+    let pinned = parse_fingerprint(&s.server_fp).is_ok_and(|fp| fp.is_some());
+    ServerConfig {
+        server: s.server,
+        server_fp: s.server_fp,
+        pinned,
+    }
 }
 
 /// 第一次连上服务器时记下的证书指纹：存在 config.toml 的 `[server_trust]` 里（服务器地址 + 指纹，
@@ -742,6 +771,66 @@ pub fn autostart_default_pending() -> bool {
 /// 写入 `autostart`（macOS 的模板里没有，加上时带一段说明）
 fn put_autostart(doc: &mut DocumentMut, on: bool) {
     put_setting(doc, "autostart", toml_edit::value(on), autostart_note);
+}
+
+/// 保存界面上设置的中转服务器地址和证书指纹。注意改动要重启 Airhand 才生效：
+/// 连接用的是启动时读到的 [`settings`] / [`link`]，不是这里刚写进去的值。
+pub fn save_server_config(server: &str, server_fp: &str) -> Result<()> {
+    let (server, server_fp) = validate_server_config(server, server_fp)?;
+    edit(move |doc| {
+        put_setting(doc, "server", toml_edit::value(&server), server_note);
+        put_setting(doc, "server_fp", toml_edit::value(&server_fp), server_fp_note);
+        // 换了服务器或指纹，之前记下的证书就不能再作数了（留空时重新按第一次连接记下）
+        doc.remove("server_trust");
+        Ok(())
+    })
+}
+
+/// 界面输入先校验一遍（Windows 安装版要经过命名管道交给服务写，错误得当场告诉用户）
+pub fn validate_server_config(server: &str, server_fp: &str) -> Result<(String, String)> {
+    Ok((validate_server(server)?, validate_fingerprint(server_fp)?))
+}
+
+/// 服务器地址：host:port（UDP），端口 1..=65535，不带空格或协议前缀
+fn validate_server(s: &str) -> Result<String> {
+    let s = s.trim();
+    anyhow::ensure!(!s.is_empty(), "the server address is empty");
+    anyhow::ensure!(s.len() <= 255, "the server address is too long");
+    anyhow::ensure!(
+        !s.chars().any(|c| c.is_whitespace() || c == '/'),
+        "the server address must be host:port without spaces or a scheme"
+    );
+    let (host, port) = s
+        .rsplit_once(':')
+        .ok_or_else(|| anyhow::anyhow!("the server address must be host:port"))?;
+    anyhow::ensure!(!host.is_empty(), "the server address has no host");
+    let port: u16 = port
+        .parse()
+        .map_err(|_| anyhow::anyhow!("the server port must be a number between 1 and 65535"))?;
+    anyhow::ensure!(port > 0, "the server port must be a number between 1 and 65535");
+    Ok(s.to_string())
+}
+
+/// 指纹交给 `airhand_link` 的解析器校验：空字符串表示不固定，否则是 64 位十六进制
+fn validate_fingerprint(s: &str) -> Result<String> {
+    let s = s.trim();
+    anyhow::ensure!(s.len() <= 200, "the fingerprint is too long");
+    parse_fingerprint(s)?;
+    Ok(s.to_string())
+}
+
+fn server_note() -> String {
+    tr!(
+        "# 中转服务器地址：host:port（UDP），在控制台的\"服务器状态 → 编辑\"里设置，改后要重启 Airhand 才生效\n",
+        "# Relay server address: host:port (UDP), set in the console's \"Server status → Edit\"; restart Airhand for the change to take effect\n"
+    )
+}
+
+fn server_fp_note() -> String {
+    tr!(
+        "# 服务器证书的 SHA-256 指纹（服务器日志里打印的 64 位十六进制，可用 : 或空格分隔）。留空表示第一次连接时记下证书，之后证书变了就拒绝连接\n",
+        "# SHA-256 fingerprint of the relay server certificate (the 64 hex digits printed in the server log, `:` and spaces are allowed). Empty means remember the certificate on the first connection and refuse it if it changes later\n"
+    )
 }
 
 /// 保存选的界面语言（托盘菜单、控制台里切换的）
@@ -1259,6 +1348,89 @@ pub(crate) mod secret {
 mod tests {
     use super::*;
 
+    /// 这两个测试都会写真实配置文件、用到全局 LAST，必须串行（其它测试只在内存里改 DocumentMut）
+    static TEST_FILE_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn validate_server_input() {
+        for ok in [
+            "127.0.0.1:4433",
+            "relay.example.com:4433",
+            "[::1]:4433",
+            " relay.example.com:4433 ",
+        ] {
+            assert!(validate_server(ok).is_ok(), "{ok}");
+        }
+        assert_eq!(
+            validate_server(" relay.example.com:4433 ").unwrap(),
+            "relay.example.com:4433"
+        );
+        for bad in [
+            "",
+            "relay.example.com",
+            "relay.example.com:0",
+            "relay.example.com:65536",
+            "relay.example.com:abc",
+            "https://relay.example.com:4433",
+            "relay example:4433",
+        ] {
+            assert!(validate_server(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn validate_fingerprint_input() {
+        let hex = "ab".repeat(32);
+        assert_eq!(validate_fingerprint("").unwrap(), "");
+        assert_eq!(validate_fingerprint(&hex).unwrap(), hex);
+        assert!(validate_fingerprint(&["AB"; 32].join(":")).is_ok());
+        for bad in ["abc".to_string(), "zz".to_string(), format!("{hex}00")] {
+            assert!(validate_fingerprint(&bad).is_err(), "{bad}");
+        }
+    }
+
+    /// 界面上设置服务器：写进文件、能读回来；换设置时清掉之前记下的证书；无效输入不写文件
+    #[test]
+    fn server_config_saved_and_read_back() {
+        let _lock = TEST_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = std::env::temp_dir().join(format!(
+            "airhand-server-config-test-{:016x}",
+            rand::random::<u64>()
+        ));
+        let file = root.join(FILE_NAME);
+        TEST_PATH.with(|p| *p.borrow_mut() = Some(file.clone()));
+        ensure_file().unwrap();
+
+        let mut doc: DocumentMut = std::fs::read_to_string(&file).unwrap().parse().unwrap();
+        put_trust(&mut doc, "old.example.com:4433", &[7; 32]);
+        std::fs::write(&file, doc.to_string()).unwrap();
+
+        let server = "relay.example.com:4433";
+        let fp = "ab".repeat(32);
+        save_server_config(server, &fp).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.contains(&format!("server = \"{server}\"")));
+        assert!(text.contains(&format!("server_fp = \"{fp}\"")));
+        // 模板注释里提到了 [server_trust]，这里只检查它作为表头确实没了
+        assert!(!text.lines().any(|l| l.trim() == "[server_trust]"));
+        assert!(text.contains(server_note().lines().next().unwrap()));
+        let c = server_config();
+        assert_eq!(c.server, server);
+        assert_eq!(c.server_fp, fp);
+        assert!(c.pinned);
+
+        save_server_config(server, "").unwrap();
+        let c = server_config();
+        assert_eq!(c.server_fp, "");
+        assert!(!c.pinned);
+
+        let before = std::fs::read_to_string(&file).unwrap();
+        assert!(save_server_config("bad", "").is_err());
+        assert!(save_server_config(server, "abc").is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     /// 第一次连上服务器时记下的指纹：跟着服务器地址走，再记只改值，文件被删掉重新生成时接着用
     #[test]
     fn server_trust_roundtrip_and_survives_regeneration() {
@@ -1670,6 +1842,7 @@ mod tests {
     /// * 运行中文件、或者整个目录被删掉，很快就按默认配置重新生成，控制码和设备还在，删之前手动改过的也在
     #[test]
     fn file_lifecycle() {
+        let _lock = TEST_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use std::time::Instant;
         let root = std::env::temp_dir().join(format!(
             "airhand-config-test-{:016x}",

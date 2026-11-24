@@ -141,6 +141,16 @@ export interface AppInfo {
   configPath?: string | null;
 }
 
+/** 界面上编辑的中转服务器设置（与 Rust 端 config::ServerConfig 对应） */
+export interface ServerConfig {
+  /** 中转服务器地址 host:port（UDP） */
+  server: string;
+  /** 证书指纹；"" 表示第一次连接时记下服务器的证书 */
+  serverFp: string;
+  /** 是否配置了固定的证书指纹 */
+  pinned: boolean;
+}
+
 /** "我的设备"里的一台：连接过的电脑（与 Rust 端 devices::Device 对应，保存在 config.toml 的 [[device]] 里） */
 export interface SavedDevice {
   /** 6 位控制码 */
@@ -389,6 +399,10 @@ export interface Backend {
   switchToHost(): Promise<void>;
   /** 切换界面语言（桌面版同时作用于托盘菜单） */
   setLanguage(lang: Lang): Promise<void>;
+  /** 中转服务器地址和证书指纹（桌面版：config.toml 当前内容；网页版返回 null） */
+  loadServerConfig(): Promise<ServerConfig | null>;
+  /** 保存服务器地址和证书指纹；失败时抛出 Problem（无效地址或指纹） */
+  saveServerConfig(server: string, serverFp: string): Promise<void>;
   /** 语言被切换（包括在托盘菜单里切换） */
   onLangChanged(cb: (lang: Lang) => void): () => void;
   /** 让窗口全屏（桌面版；网页版只有网页全屏，什么也不做） */

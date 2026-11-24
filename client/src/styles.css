@@ -730,6 +730,59 @@ kbd {
   overflow-wrap: anywhere;
   user-select: text;
 }
+.sp-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  background: var(--glass-2);
+}
+.sp-edit-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sp-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.sp-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--well);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.sp-input:focus {
+  border-color: var(--edge);
+}
+.sp-edit-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.sp-saved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--good);
+}
+.sp-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
 .sp-hint {
   margin: 0;
   padding-top: 10px;

@@ -83,6 +83,11 @@ pub enum ToAgent {
     NewPairingCode,
     /// 忘掉所有配对过的控制端
     ForgetPaired,
+    /// 控制台里设置的中转服务器地址和证书指纹：写进 config.toml（托盘没有写安装目录的权限）
+    SaveServerConfig {
+        server: String,
+        server_fp: String,
+    },
     /// 控制台的身份（那个用户的 DPAPI 加密过，见 [`crate::config::controller_identity`]）写进 config.toml
     SaveControllerKey {
         key: String,
@@ -251,6 +256,17 @@ async fn handle(msg: ToAgent, agent: &Agent, hub: &StatusHub) {
         ToAgent::ForgetPaired => {
             let gate = agent.gate.clone();
             let _ = tokio::task::spawn_blocking(move || gate.forget_paired()).await;
+        }
+        ToAgent::SaveServerConfig { server, server_fp } => {
+            let r = tokio::task::spawn_blocking(move || {
+                crate::config::save_server_config(&server, &server_fp)
+            })
+            .await;
+            match r {
+                Ok(Ok(())) => info!("saved the relay server settings"),
+                Ok(Err(e)) => warn!("can't save the relay server settings: {e:#}"),
+                Err(e) => warn!("can't save the relay server settings: {e}"),
+            }
         }
         ToAgent::SaveControllerKey { key } => {
             let r =

@@ -6,7 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Backend, PopoutFrames, SavedDevice, WindowFrame } from "../api";
+import type { Backend, PopoutFrames, SavedDevice, ServerConfig, WindowFrame } from "../api";
 import { ConsoleLink } from "../console";
 import type { Lang } from "../i18n";
 
@@ -71,6 +71,14 @@ class DesktopConsole extends ConsoleLink implements Backend {
 
   setLanguage(lang: Lang) {
     return invoke<void>("set_language", { lang });
+  }
+
+  loadServerConfig() {
+    return invoke<ServerConfig>("server_config_load");
+  }
+
+  saveServerConfig(server: string, serverFp: string) {
+    return invoke<void>("server_config_save", { server, serverFp });
   }
 
   onLangChanged(cb: (lang: Lang) => void) {

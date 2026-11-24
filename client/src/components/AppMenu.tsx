@@ -4,7 +4,7 @@
 //
 // 以前主菜单在最左边的 Logo 上：macOS 上和系统的红绿灯按钮挤在一起，点服务器状态也会在最左边弹出菜单。
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
+import { api, toProblem, type ServerConfig } from "../lib/api";
 import { focusActive, requestToHost } from "../lib/actions";
 import { setLang, useLang, useT, type Lang } from "../lib/i18n";
 import { problemText } from "../lib/messages";
@@ -231,6 +231,37 @@ function ServerPanel({ onClose }: { onClose: () => void }) {
   const server = useStore((s) => s.server);
   const problem = useStore((s) => s.serverProblem);
   const app = useStore((s) => s.app);
+  const [draft, setDraft] = useState<ServerConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const beginEdit = async () => {
+    const cfg = await api.loadServerConfig();
+    if (!cfg) return;
+    setDraft(cfg);
+    setError(null);
+    setSaved(false);
+  };
+  const save = async () => {
+    if (!draft) return;
+    if (!/^\S+:\d+$/.test(draft.server.trim())) {
+      setError(t("server.invalidAddress"));
+      return;
+    }
+    const hex = draft.serverFp.replace(/[:\s]/g, "");
+    if (hex && !/^[0-9a-fA-F]{64}$/.test(hex)) {
+      setError(t("server.invalidFp"));
+      return;
+    }
+    setError(null);
+    setSaved(false);
+    try {
+      await api.saveServerConfig(draft.server.trim(), draft.serverFp.trim());
+      setSaved(true);
+    } catch (e) {
+      setError(problemText(toProblem(e)));
+    }
+  };
   return (
     <Popover className="server-panel" onClose={onClose}>
       <div className="sp-head">
@@ -265,8 +296,61 @@ function ServerPanel({ onClose }: { onClose: () => void }) {
                 {t("server.unpinned")}
               </span>
             )}
+            {api.kind === "desktop" && (
+              <button className="chip-btn" onClick={() => void beginEdit()}>
+                {t("server.edit")}
+              </button>
+            )}
           </div>
           <div className="sp-addr mono">{app.server}</div>
+        </div>
+      )}
+
+      {draft && (
+        <div className="sp-edit">
+          <div className="sp-edit-title">{t("server.editTitle")}</div>
+          <label className="sp-edit-field">
+            <span>{t("server.address")}</span>
+            <input
+              className="sp-input mono"
+              value={draft.server}
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(e) => setDraft({ ...draft, server: e.target.value })}
+            />
+          </label>
+          <label className="sp-edit-field">
+            <span>{t("server.serverFp")}</span>
+            <input
+              className="sp-input mono"
+              value={draft.serverFp}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="64 hex"
+              onChange={(e) => setDraft({ ...draft, serverFp: e.target.value })}
+            />
+          </label>
+          <p className="sp-edit-note">{t("server.serverFpHint")}</p>
+          {error && (
+            <div className="error-box left" role="alert">
+              <IconWarn size={15} />
+              <span>{error}</span>
+            </div>
+          )}
+          {saved && (
+            <div className="sp-saved">
+              <IconCheck size={13} />
+              {t("server.saved")}
+            </div>
+          )}
+          <div className="sp-edit-actions">
+            <button className="chip-btn" onClick={() => setDraft(null)}>
+              {t("server.cancel")}
+            </button>
+            <button className="chip-btn done" onClick={() => void save()}>
+              {t("server.save")}
+            </button>
+          </div>
         </div>
       )}
 

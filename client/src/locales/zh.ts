@@ -38,6 +38,15 @@ export default {
   "server.retryLater": "稍后会自动重试",
   "server.unpinned": "首次连接时信任",
   "server.unpinnedHint": "未配置证书指纹：第一次连接时记住了服务器的证书，之后证书变了就拒绝连接",
+  "server.edit": "编辑",
+  "server.editTitle": "设置中转服务器",
+  "server.serverFp": "证书指纹",
+  "server.serverFpHint": "服务器日志里打印的 64 位十六进制，可用 : 或空格分隔。留空表示第一次连接时记住服务器证书（安全性较低）",
+  "server.save": "保存",
+  "server.cancel": "取消",
+  "server.saved": "已保存。重启 Airhand 后生效",
+  "server.invalidAddress": "服务器地址应为 host:port（端口 1–65535）",
+  "server.invalidFp": "证书指纹应为 64 位十六进制，或留空",
 
   // 设置（标签栏右侧的齿轮）
   "menu.title": "设置",

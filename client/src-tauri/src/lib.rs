@@ -599,6 +599,45 @@ async fn devices_save(
         .map_err(|e| Problem::failed(format!("{e:#}")))
 }
 
+/// 控制台里显示的服务器设置（每次从配置文件读，不是启动时那一份）
+#[tauri::command]
+fn server_config_load() -> config::ServerConfig {
+    config::server_config()
+}
+
+/// 保存控制台里设置的服务器地址和证书指纹
+#[tauri::command]
+async fn server_config_save(
+    state: tauri::State<'_, AppState>,
+    server: String,
+    server_fp: String,
+) -> Result<(), Problem> {
+    // 先校验一遍：Windows 安装版经命名管道交给服务写，错误要当场告诉用户
+    let (server, server_fp) = config::validate_server_config(&server, &server_fp)
+        .map_err(|e| Problem::failed(format!("{e:#}")))?;
+    // Windows 安装版：配置文件在安装目录里，由服务里的被控端维护（托盘没有写权限），经命名管道交给它写
+    #[cfg(windows)]
+    if state.service_mode {
+        let connected = state.hub.borrow().service.is_some_and(|s| s.connected);
+        let sv = state.services.lock().unwrap();
+        return match &sv.host {
+            Some(Hosting::Service(link)) if connected => {
+                link.send(winsvc::ipc::ToAgent::SaveServerConfig { server, server_fp });
+                Ok(())
+            }
+            _ => Err(Problem::failed(
+                "the Airhand service isn't reachable from this session",
+            )),
+        };
+    }
+    #[cfg(not(windows))]
+    let _ = state;
+    tauri::async_runtime::spawn_blocking(move || config::save_server_config(&server, &server_fp))
+        .await
+        .map_err(Problem::failed)?
+        .map_err(|e| Problem::failed(format!("{e:#}")))
+}
+
 /// 控制台切换界面语言
 #[tauri::command]
 fn set_language(app: AppHandle, lang: Lang) {
@@ -778,6 +817,8 @@ pub fn run() {
             switch_to_host,
             devices_load,
             devices_save,
+            server_config_load,
+            server_config_save,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
