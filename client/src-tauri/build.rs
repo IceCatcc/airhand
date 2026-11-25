@@ -4,6 +4,9 @@ fn main() {
     let target = std::env::var("TARGET").unwrap_or_default();
     if target.contains("windows-msvc") {
         println!("cargo:rustc-link-arg=/DELAYLOAD:mfplat.dll");
+        // 链接参数对这个包的所有目标生效：没有用到 Media Foundation 的（airhand.exe 的单元测试程序）链接器会报
+        // LNK4199（没有来自 mfplat.dll 的导入，忽略 /DELAYLOAD）。本来就是无事可做，不算问题
+        println!("cargo:rustc-link-arg=/IGNORE:4199");
         println!("cargo:rustc-link-lib=delayimp");
     }
     let mic = "src/host/mic";
@@ -26,7 +29,22 @@ fn main() {
                 .flag("-fblocks")
                 .file(vd)
                 .compile("airhand_vd");
-            for framework in ["AVFAudio", "CoreAudio", "CoreGraphics", "Foundation"] {
+            // 防窥模式盖在本机显示器上的黑窗口（见 src/host/virtual_display/curtain.rs）
+            let curtain = "src/host/virtual_display/curtain.m";
+            println!("cargo:rerun-if-changed={curtain}");
+            cc::Build::new()
+                .std("gnu11")
+                .flag("-fobjc-arc")
+                .flag("-fblocks")
+                .file(curtain)
+                .compile("airhand_curtain");
+            for framework in [
+                "AppKit",
+                "AVFAudio",
+                "CoreAudio",
+                "CoreGraphics",
+                "Foundation",
+            ] {
                 println!("cargo:rustc-link-lib=framework={framework}");
             }
         }

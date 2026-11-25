@@ -1,7 +1,7 @@
 # 发布：推送 vX.Y.Z 或 vX.Y.Z-rc.N 的 tag 时编译所有平台，发布到 GitHub Releases。
 #
-#   git tag v0.4.0-rc.1 && git push origin v0.4.0-rc.1   → Pre-release
-#   git tag v0.4.0      && git push origin v0.4.0        → 正式版（标为 Latest）
+#   git tag -a v0.4.0-rc.1 -m "版本 0.4.0-rc.1" && git push origin v0.4.0-rc.1   → Pre-release
+#   git tag -a v0.4.0      -m "版本 0.4.0"      && git push origin v0.4.0        → 正式版（标为 Latest）
 #
 # 版本号以 tag 为准：编译前用 .github/scripts/set-version.mjs 写进各端的清单文件（不提交）。
 # Android 的 versionCode 由版本号算出（0.4.0-rc.1 → 40001，0.4.0 → 40099，见 android/app/build.gradle.kts）。
@@ -318,7 +318,9 @@ jobs:
           AIRHAND_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           AIRHAND_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           AIRHAND_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
+        # Kotlin 在 Gradle 进程里编译：不另开 Kotlin 守护进程（CI 只构建一次，用不上），也就没有它启动时的误报
+        # “e: The daemon has terminated unexpectedly ... Kotlin compile daemon is ready”
+        run: ./gradlew assembleRelease -Pkotlin.compiler.execution.strategy=in-process
 
       - name: Collect
         run: |

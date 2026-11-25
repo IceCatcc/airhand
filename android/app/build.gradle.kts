@@ -148,6 +148,8 @@ val cargoBuild by tasks.registering(Exec::class) {
     outputs.dir(outDir)
     doFirst {
         environment("ANDROID_NDK_HOME", android.ndkDirectory.absolutePath)
+        // CI 的运行环境预先把 ANDROID_NDK_ROOT 设成它自带的 NDK：不一致的话 cargo-ndk 会警告（它用的是 ANDROID_NDK_HOME）
+        environment("ANDROID_NDK_ROOT", android.ndkDirectory.absolutePath)
     }
     val args = mutableListOf("cargo", "ndk")
     rustAbis.forEach { args += listOf("-t", it) }
